@@ -38,7 +38,7 @@ A modular, lightweight tool for testing AI systems against common attacks based 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/kibuka.git
+git clone https://github.com/leonkalema/kibuka.git
 cd kibuka
 
 # Install dependencies
