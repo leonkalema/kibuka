@@ -121,6 +121,39 @@ class KibukaSimulator:
         # Calculate estimated data efficiency (how much poisoned data was needed)
         data_efficiency = round((percentage * 100) / accuracy_impact, 2)
         
+        # Apply reality checks to prevent impossible results
+        accuracy_impact = self._enforce_realistic_bounds(accuracy_impact, 0.0, 95.0)
+        for cls in per_class_impact:
+            per_class_impact[cls] = self._enforce_realistic_bounds(per_class_impact[cls], 0.0, 95.0)
+        attack_success_rate = self._enforce_realistic_bounds(min(percentage * 10, 0.99) * 100, 0.0, 99.0)
+        poisoning_efficiency = self._enforce_realistic_bounds(accuracy_impact / (percentage * 100), 0.1, 10.0, False)
+        stealthiness_score = self._enforce_realistic_bounds((1 - percentage) * 10, 0.0, 10.0, False)
+        
+        # Calculate confidence score based on simulation limitations
+        confidence_factors = {
+            "data_quality": 0.7,  # Simulated data quality factor
+            "model_specificity": 0.8 if attack_type == "label_flipping" else 0.6,  # Higher confidence for label flipping
+            "attack_research": 0.9,  # Well-researched attack type
+            "simulation_fidelity": 0.5  # Medium fidelity simulation
+        }
+        
+        # Adjust confidence based on percentage (higher percentage = lower confidence due to detectability)
+        if percentage > 0.3:
+            confidence_factors["attack_detectability"] = 0.5
+        else:
+            confidence_factors["attack_detectability"] = 0.8
+            
+        # Weight factors based on importance
+        confidence_weights = {
+            "data_quality": 0.3,
+            "model_specificity": 0.2,
+            "attack_research": 0.2,
+            "simulation_fidelity": 0.2,
+            "attack_detectability": 0.1
+        }
+        
+        confidence_score = self._calculate_confidence_score(confidence_factors, confidence_weights)
+        
         result = {
             "attack_type": "data_poisoning",
             "subtype": attack_type,
@@ -136,10 +169,11 @@ class KibukaSimulator:
                     "target_classes": target_classes
                 },
                 "metrics": {
-                    "attack_success_rate": round(min(percentage * 10, 0.99) * 100, 2),  # As percentage
-                    "poisoning_efficiency": round(accuracy_impact / (percentage * 100), 2),
-                    "stealthiness_score": round((1 - percentage) * 10, 2)  # Lower percentage is more stealthy
+                    "attack_success_rate": attack_success_rate,
+                    "poisoning_efficiency": poisoning_efficiency,
+                    "stealthiness_score": stealthiness_score
                 },
+                "confidence": confidence_score,
                 "timestamp": self._get_timestamp()
             }
         }
@@ -151,8 +185,81 @@ class KibukaSimulator:
         from datetime import datetime
         return datetime.now().isoformat()
     
+    def _enforce_realistic_bounds(self, value: float, min_val: float = 0.0, max_val: float = 100.0, is_percentage: bool = True) -> float:
+        """
+        Enforce realistic bounds on metric values to prevent impossible results.
+        
+        Args:
+            value: The value to bound
+            min_val: Minimum allowed value
+            max_val: Maximum allowed value
+            is_percentage: Whether the value represents a percentage (default: True)
+            
+        Returns:
+            The value clamped to the specified bounds, rounded to 1 decimal place
+        """
+        # Ensure value is within realistic bounds
+        bounded_value = max(min_val, min(value, max_val))
+        
+        # Round to 1 decimal place for consistency
+        return round(bounded_value, 1)
+    
+    def _calculate_confidence_score(self, factors: Dict[str, float], weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+        """
+        Calculate a confidence score for attack findings based on simulation limitations.
+        
+        Args:
+            factors: Dictionary of factors affecting confidence, with values between 0.0 and 1.0
+                    Higher values indicate higher confidence for that factor
+            weights: Optional dictionary of weights for each factor (default: equal weights)
+                    Weights should sum to 1.0
+                    
+        Returns:
+            Dictionary containing overall confidence score and factor-specific scores
+        """
+        if not factors:
+            return {"overall": 0.0, "factors": {}}
+            
+        # Use equal weights if none provided
+        if weights is None:
+            weights = {factor: 1.0 / len(factors) for factor in factors}
+        else:
+            # Normalize weights to sum to 1.0
+            total_weight = sum(weights.values())
+            weights = {k: v / total_weight for k, v in weights.items()}
+            
+        # Calculate weighted average confidence score
+        overall_score = sum(factors[factor] * weights.get(factor, 0.0) for factor in factors)
+        
+        # Round to 2 decimal places
+        overall_score = round(overall_score, 2)
+        
+        # Convert to percentage
+        overall_percentage = round(overall_score * 100)
+        
+        # Map to confidence level
+        confidence_level = "Very Low"
+        if overall_score >= 0.8:
+            confidence_level = "Very High"
+        elif overall_score >= 0.6:
+            confidence_level = "High"
+        elif overall_score >= 0.4:
+            confidence_level = "Medium"
+        elif overall_score >= 0.2:
+            confidence_level = "Low"
+            
+        # Create detailed confidence report
+        confidence_report = {
+            "overall": overall_score,
+            "percentage": overall_percentage,
+            "level": confidence_level,
+            "factors": {factor: round(score, 2) for factor, score in factors.items()}
+        }
+        
+        return confidence_report
+    
     def model_inversion_attack(self, target_model: Any, 
-                              params: Dict[str, Any]) -> Dict[str, Any]:
+                             params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Simulate a model inversion attack to reconstruct training data.
         
@@ -189,6 +296,37 @@ class KibukaSimulator:
         # Calculate computational efficiency
         compute_time_ms = round(num_iterations * (1.5 if attack_type == "gradient_descent" else 0.8))
         
+        # Apply reality checks to prevent impossible results
+        reconstruction_quality = self._enforce_realistic_bounds(reconstruction_quality, 0.0, 0.9, False)
+        confidence_score = self._enforce_realistic_bounds(confidence_score * 100, 0.0, 98.0) / 100
+        visual_similarity_score = self._enforce_realistic_bounds(reconstruction_quality * 0.9 * 100, 0.0, 90.0) / 100
+        privacy_leakage_score = self._enforce_realistic_bounds(reconstruction_quality * 10, 0.0, 9.0, False)
+        
+        # Calculate confidence score based on simulation limitations
+        confidence_factors = {
+            "model_complexity": 0.6,  # Medium confidence due to model complexity variations
+            "attack_iterations": min(0.9, num_iterations / 1000),  # More iterations = higher confidence
+            "attack_research": 0.8,  # Well-researched attack type
+            "simulation_fidelity": 0.5  # Medium fidelity simulation
+        }
+        
+        # Adjust confidence based on attack type
+        if attack_type == "gradient_descent":
+            confidence_factors["attack_implementation"] = 0.7  # Higher confidence for gradient-based methods
+        else:
+            confidence_factors["attack_implementation"] = 0.5  # Lower confidence for other methods
+            
+        # Weight factors based on importance
+        confidence_weights = {
+            "model_complexity": 0.25,
+            "attack_iterations": 0.25,
+            "attack_research": 0.2,
+            "simulation_fidelity": 0.15,
+            "attack_implementation": 0.15
+        }
+        
+        confidence_score_report = self._calculate_confidence_score(confidence_factors, confidence_weights)
+        
         result = {
             "attack_type": "model_inversion",
             "subtype": attack_type,
@@ -206,13 +344,14 @@ class KibukaSimulator:
                 },
                 "metrics": {
                     "confidence_score": confidence_score,
-                    "visual_similarity_score": round(reconstruction_quality * 0.9, 2),
+                    "visual_similarity_score": visual_similarity_score,
                     "computational_efficiency": {
                         "time_ms": compute_time_ms,
                         "iterations_per_quality_point": round(num_iterations / (reconstruction_quality * 100), 1)
                     },
-                    "privacy_leakage_score": round(reconstruction_quality * 10, 1)  # Scale of 1-10
+                    "privacy_leakage_score": privacy_leakage_score
                 },
+                "confidence": confidence_score_report,
                 "timestamp": self._get_timestamp()
             }
         }
@@ -275,6 +414,31 @@ class KibukaSimulator:
         else:
             compute_time_ms = round(500 + (epsilon * 200))  # C&W is more computationally intensive
         
+        # Apply reality checks to prevent impossible results
+        success_rate = self._enforce_realistic_bounds(success_rate, 0.0, 100.0)
+        perturbation_perceptibility = self._enforce_realistic_bounds(perturbation_perceptibility, 0.1, 10.0, False)
+        transferability = self._enforce_realistic_bounds(transferability * 100, 0.0, 100.0) / 100
+        
+        # Calculate confidence score based on simulation limitations
+        confidence_factors = {
+            "attack_method": 0.9 if method == "pgd" else (0.8 if method == "fgsm" else 0.6),  # Higher confidence for well-established methods
+            "perturbation_size": 0.9 if epsilon < 0.1 else (0.7 if epsilon < 0.2 else 0.5),  # Higher confidence for smaller perturbations
+            "norm_type": 0.8 if norm == "l2" else (0.7 if norm == "linf" else 0.6),  # Higher confidence for common norms
+            "iterations": min(0.9, iterations / 200) if method == "pgd" else 0.7,  # More iterations = higher confidence for iterative methods
+            "simulation_fidelity": 0.6  # Medium-high fidelity simulation for evasion attacks
+        }
+            
+        # Weight factors based on importance
+        confidence_weights = {
+            "attack_method": 0.3,
+            "perturbation_size": 0.25,
+            "norm_type": 0.15,
+            "iterations": 0.15,
+            "simulation_fidelity": 0.15
+        }
+        
+        confidence_score = self._calculate_confidence_score(confidence_factors, confidence_weights)
+        
         result = {
             "attack_type": "evasion",
             "subtype": method,
@@ -305,6 +469,7 @@ class KibukaSimulator:
                         "queries_required": 1 if method == "fgsm" else iterations
                     }
                 },
+                "confidence": confidence_score,
                 "timestamp": self._get_timestamp()
             }
         }
@@ -361,6 +526,36 @@ class KibukaSimulator:
         false_positive_rate = round((1 - precision) * 100, 1)
         false_negative_rate = round((1 - recall) * 100, 1)
         
+        # Apply reality checks to prevent impossible results
+        inference_rate = self._enforce_realistic_bounds(inference_rate, 50.0, 95.0)
+        false_positive_rate = self._enforce_realistic_bounds(false_positive_rate, 0.0, 50.0)
+        false_negative_rate = self._enforce_realistic_bounds(false_negative_rate, 0.0, 50.0)
+        precision = self._enforce_realistic_bounds(precision * 100, 50.0, 99.0) / 100
+        recall = self._enforce_realistic_bounds(recall * 100, 50.0, 99.0) / 100
+        f1_score = self._enforce_realistic_bounds(f1_score * 100, 50.0, 99.0) / 100
+        roc_auc = self._enforce_realistic_bounds(roc_auc * 100, 50.0, 99.0) / 100
+        privacy_risk = self._enforce_realistic_bounds(privacy_risk, 1.0, 10.0, False)
+        
+        # Calculate confidence score based on simulation limitations
+        confidence_factors = {
+            "attack_type": 0.8 if attack_type == "confidence_thresholding" else 0.7,  # Higher confidence for simple methods
+            "threshold_selection": 0.9 if 0.6 <= threshold <= 0.9 else 0.6,  # Higher confidence for reasonable thresholds
+            "statistical_robustness": 0.7,  # Medium-high confidence in statistical methods
+            "simulation_fidelity": 0.6,  # Medium fidelity simulation
+            "model_generalization": 0.5  # Medium confidence due to model-specific variations
+        }
+            
+        # Weight factors based on importance
+        confidence_weights = {
+            "attack_type": 0.25,
+            "threshold_selection": 0.25,
+            "statistical_robustness": 0.2,
+            "simulation_fidelity": 0.15,
+            "model_generalization": 0.15
+        }
+        
+        confidence_score = self._calculate_confidence_score(confidence_factors, confidence_weights)
+        
         result = {
             "attack_type": "membership_inference",
             "subtype": attack_type,
@@ -391,6 +586,7 @@ class KibukaSimulator:
                         "compute_time_ms": compute_time_ms
                     }
                 },
+                "confidence": confidence_score,
                 "timestamp": self._get_timestamp()
             }
         }
@@ -451,6 +647,32 @@ class KibukaSimulator:
         # Calculate intellectual property risk
         ip_risk = round(functional_similarity / 10, 1)  # Scale of 1-10
         
+        # Apply reality checks to prevent impossible results
+        functional_similarity = self._enforce_realistic_bounds(functional_similarity, 0.0, 100.0)
+        decision_boundary_similarity = self._enforce_realistic_bounds(decision_boundary_similarity, 0.0, 100.0)
+        prediction_agreement = self._enforce_realistic_bounds(prediction_agreement, 0.0, 100.0)
+        ip_risk = self._enforce_realistic_bounds(ip_risk, 0.0, 10.0, False)
+        
+        # Calculate confidence score based on simulation limitations
+        confidence_factors = {
+            "attack_type": 0.8 if attack_type == "query_based" else (0.7 if attack_type == "active_learning" else 0.6),
+            "query_budget": min(0.9, query_budget / 10000),  # Higher confidence with more queries
+            "substitute_model": 0.8 if substitute_model_type == "mlp" else (0.7 if substitute_model_type == "cnn" else 0.6),
+            "simulation_fidelity": 0.6,  # Medium fidelity simulation
+            "model_complexity": 0.5  # Medium confidence due to model complexity variations
+        }
+            
+        # Weight factors based on importance
+        confidence_weights = {
+            "attack_type": 0.25,
+            "query_budget": 0.3,
+            "substitute_model": 0.2,
+            "simulation_fidelity": 0.15,
+            "model_complexity": 0.1
+        }
+        
+        confidence_score = self._calculate_confidence_score(confidence_factors, confidence_weights)
+        
         result = {
             "attack_type": "model_stealing",
             "subtype": attack_type,
@@ -482,6 +704,7 @@ class KibukaSimulator:
                         "monetization_impact": round(functional_similarity / 25, 1)  # Scale of 1-4
                     }
                 },
+                "confidence": confidence_score,
                 "timestamp": self._get_timestamp()
             }
         }
